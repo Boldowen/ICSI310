@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICSI310 Lab6</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            overflow-x: auto;
+            border-radius: 5px;
+        }
+        code {
+            font-family: "Courier New", monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ICSI310</h1>
+    <h2>Lab 6</h2>
+
+    <pre><code>
+        import random
+import numpy as np
+from collections import deque
+import matplotlib.pyplot as plt
+from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.spatial.distance import squareform
+
+def generate_random_sequence(length=100):
+    """100 nucleotide urttai random DNA daraalal uusgeh"""
+    nucleotides = ['A', 'T', 'G', 'C']
+    return ''.join(random.choice(nucleotides) for _ in range(length))
+
+def mutate_sequence(sequence, num_mutations=30):
+    """Daraalald mutate hiih"""
+    nucleotides = ['A', 'T', 'G', 'C']
+    seq_list = list(sequence)
+    positions = random.sample(range(len(sequence)), num_mutations)
+    
+    for pos in positions:
+        original = seq_list[pos]
+        new_nuc = random.choice([n for n in nucleotides if n != original])
+        seq_list[pos] = new_nuc
+    
+    return ''.join(seq_list)
+
+def generate_evolutionary_tree(generations=8, mutations_per_step=30):
+    """evolutionary tree үүсгэх"""
+    #undesn daraalal
+    root_sequence = generate_random_sequence()
+    
+    #Buh daraalaluud
+    all_sequences = {'S0': root_sequence}
+
+    #evolutionary modnii butets
+    tree_structure = {}
+
+    #bfs ashilah
+    queue = deque([('S0', root_sequence, 0)])
+    
+    while queue:
+        parent_id, parent_seq, current_gen = queue.popleft()
+        
+        if current_gen < generations:
+            child1_id = parent_id + '1'
+            child2_id = parent_id + '2'
+            
+            child1_seq = mutate_sequence(parent_seq, mutations_per_step)
+            child2_seq = mutate_sequence(parent_seq, mutations_per_step)
+            
+            all_sequences[child1_id] = child1_seq
+            all_sequences[child2_id] = child2_seq
+            
+            tree_structure[parent_id] = [child1_id, child2_id]
+            
+            queue.append((child1_id, child1_seq, current_gen + 1))
+            queue.append((child2_id, child2_seq, current_gen + 1))
+    
+    return all_sequences, tree_structure, root_sequence
+
+def save_fasta(sequences, filename='sequences.fasta'):
+    """Daraalaluudiig fasta filed hadgalah"""
+    with open(filename, 'w') as f:
+        for seq_id, seq in sequences.items():
+            generation = len(seq_id) - 1
+            f.write(f'>{seq_id} generation_{generation}\n')
+            f.write(f'{seq}\n')
+    print(f'{len(sequences)} daraalaliig {filename} -d hadgalsan')
+
+def select_random_sequences(sequences, count):
+    """random daraalaluudiig songoh"""
+    seq_ids = list(sequences.keys())
+    selected_ids = random.sample(seq_ids, min(count, len(seq_ids)))
+    return {seq_id: sequences[seq_id] for seq_id in selected_ids}
+
+def hamming_distance(seq1, seq2):
+    """2 daraalaliin hoorondh Hamming zai oloh"""
+    return sum(c1 != c2 for c1, c2 in zip(seq1, seq2))
+
+def create_distance_matrix(sequences):
+    """Buh daraalaluudiin hoorondh zai matrix uusgeh"""
+    seq_ids = list(sequences.keys())
+    n = len(seq_ids)
+    matrix = np.zeros((n, n))
+    
+    for i in range(n):
+        for j in range(i+1, n):
+            dist = hamming_distance(sequences[seq_ids[i]], sequences[seq_ids[j]])
+            matrix[i][j] = dist
+            matrix[j][i] = dist
+    
+    return matrix, seq_ids
+
+def build_upgma_tree(sequences):
+    """UPGMA mod uusgeh"""
+    distance_matrix, seq_ids = create_distance_matrix(sequences)
+    
+    # Scipy sangiin hierarchical clustering ashiglah 
+    condensed_dist = squareform(distance_matrix)
+    linkage_matrix = linkage(condensed_dist, method='average')
+    
+    return linkage_matrix, seq_ids
+
+def plot_phylogenetic_tree(linkage_matrix, labels, title='Filogenetic Tree'):
+    """Filogenetikiin mod zurah"""
+    plt.figure(figsize=(12, 8))
+    dendrogram(linkage_matrix, labels=labels, orientation='right')
+    plt.title(title, fontsize=14, pad=20)
+    plt.xlabel('Distance', fontsize=12)
+    plt.ylabel('Sequence', fontsize=12)
+    plt.tight_layout()
+    plt.savefig(title.replace(' ', '_') + '.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    print(f'Modiig {title.replace(" ", "_")}.png')
+
+def create_newick(linkage_matrix, labels):
+    """Newick formatiin mod uusgeh"""
+    n = len(labels)
+    nodes = {i: labels[i] for i in range(n)}
+    
+    for i, (cluster1, cluster2, dist, _) in enumerate(linkage_matrix):
+        cluster1, cluster2 = int(cluster1), int(cluster2)
+        new_node = f"({nodes[cluster1]}:{dist/2:.3f},{nodes[cluster2]}:{dist/2:.3f})"
+        nodes[n + i] = new_node
+    
+    return nodes[len(nodes) - 1] + ";"
+
+def build_true_tree(tree_structure, root='S0', depth=0):
+    """Evolutionary mod"""
+    if root not in tree_structure:
+        return f"{root}"
+    
+    children = tree_structure[root]
+    left = build_true_tree(tree_structure, children[0], depth+1)
+    right = build_true_tree(tree_structure, children[1], depth+1)
+    
+    return f"({left},{right}){root}"
+
+def main():
+    all_sequences, tree_structure, root_seq = generate_evolutionary_tree(generations=8, mutations_per_step=30)
+    print(f"Niit {len(all_sequences)} daraalal uuslee (2^8 = 256)")
+    print(f"Undsen daraalal: {root_seq[:50]}")
+    
+    save_fasta(all_sequences, 'all_256_sequences.fasta')
+    print("\nRandom 32 daraalal songoh")
+    selected_32 = select_random_sequences(all_sequences, 32)
+    save_fasta(selected_32, 'random_32_sequences.fasta')
+    
+    print("\nUPGMA mod uusgeh (32 daraalal)")
+    linkage_32, labels_32 = build_upgma_tree(selected_32)
+    plot_phylogenetic_tree(linkage_32, labels_32, 'UPGMA_32_daraalal')
+    
+    newick_32 = create_newick(linkage_32, labels_32)
+    with open('upgma_32.newick', 'w') as f:
+        f.write(newick_32)
+    print("Newick: upgma_32.newick")
+
+    print("\nRandom 64 daraalal songoh")
+    selected_64 = select_random_sequences(all_sequences, 64)
+    save_fasta(selected_64, 'random_64_sequences.fasta')
+    
+    print("\nUPGMA mod uusgeh (64 daraalal)")
+    linkage_64, labels_64 = build_upgma_tree(selected_64)
+    plot_phylogenetic_tree(linkage_64, labels_64, 'UPGMA_64_daraalal')
+
+    newick_64 = create_newick(linkage_64, labels_64)
+    with open('upgma_64.newick', 'w') as f:
+        f.write(newick_64)
+    print("Newick format: upgma_64.newick")
+
+if __name__ == "__main__":
+    main()
+    </code></pre>
+
+</body>
+</html>

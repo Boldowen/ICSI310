@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICSI310 Lab6</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            overflow-x: auto;
+            border-radius: 5px;
+        }
+        code {
+            font-family: "Courier New", monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ICSI310</h1>
+    <h2>Lab 6</h2>
+
+    <pre><code>
+        import re
+import csv
+import requests
+from time import sleep
+from xml.etree import ElementTree as ET
+from typing import List, Dict, Optional, Tuple
+from collections import Counter
+import spacy
+from spacy.tokens import Doc, Token
+
+class PeptideMinerAdvanced:
+    """SpaCy ashiglan Self-assembling peptides-n oguulluudees text mining hiine"""
+    
+    def __init__(self, email: str = "your.email@gmail.com", max_results: int = 10):
+        """
+        Args:
+            email:
+            max_results:
+        """
+        self.email = email
+        self.max_results = max_results
+        self.base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+        
+        #SpaCy model
+        try:
+            self.nlp = spacy.load("en_core_web_sm")
+            print("SpaCy model successfully loaded.")
+        except OSError:
+            print("SpaCy model not found")
+            print("python -m spacy download en_core_web_sm")
+            raise
+        
+        #Amino acid set
+        self.amino_acids = set('ACDEFGHIKLMNPQRSTVWY')
+        
+        #Amino acid-in shinj chanaruud 
+        self.aa_properties = {
+            'hydrophobic': set('AILMFWYV'),
+            'hydrophilic': set('RKDENQST'),
+            'charged': set('RKDE'),
+            'polar': set('STNQCY'),
+            'aromatic': set('FWY'),
+            'small': set('AGST'),
+            'acidic': set('DE'),
+            'basic': set('RKH')
+        }
+        
+        #Biology tulhuur ugs spacyd ashiglah
+        self.bio_keywords = {
+            'sequence_indicators': ['sequence', 'peptide', 'residue', 'motif'],
+            'structure_keywords': ['fold', 'structure', 'conformation', 'assembly'],
+            'modification_keywords': ['modified', 'acetylated', 'phosphorylated'],
+            'location_keywords': ['terminus', 'N-terminal', 'C-terminal', 'domain']
+        }
+        
+        #Niitleg angli ugs
+        self.common_words = {
+            "EFFICACY", 'STRATEGY', 'CHEMISTRY',
+            'THE', 'AND', 'FOR', 'WITH', 'FROM', 'THAT', 'THIS', 'WERE', 'HAVE',
+            'WHICH', 'THEIR', 'THESE', 'WHERE', 'WHEN', 'WHAT', 'WHO', 'WHY',
+            'HOW', 'CAN', 'WILL', 'SHALL', 'MAY', 'MIGHT', 'WOULD', 'COULD',
+            'ARE', 'WAS', 'HAS', 'HAD', 'DID', 'DOES', 'BEEN', 'BEING',
+            'SHOWED', 'FOUND', 'RESULTS', 'METHOD', 'METHODS', 'FIGURE',
+            'TABLE', 'SUPPLEMENTARY', 'MATERIAL', 'MATERIALS', 'SAMPLE',
+            'DIFFERENT', 'SPECIFIC', 'SIGNIFICANT', 'PRESENT', 'INCREASED'
+        }
+        
+        #daraalliin patternuud
+        self.sequence_patterns = [
+            r'(?:sequence|peptide|residues?)[:\s]+([ACDEFGHIKLMNPQRSTVWY\-]{6,})',
+            r'(?:composed of|consisting of)[:\s]+([ACDEFGHIKLMNPQRSTVWY\-]{6,})',
+            r'\(([ACDEFGHIKLMNPQRSTVWY\-]{6,})\)',  # хаалтан дотор
+            r'\b([ACDEFGHIKLMNPQRSTVWY]{8,})\b'  # урт дараалал
+        ]
+        
+        #2 dogch butets
+        self.secondary_structures = [
+            'β-sheet', 'beta-sheet', 'beta sheet',
+            'α-helix', 'alpha-helix', 'alpha helix',
+            'random coil', 'β-turn', 'beta-turn', 'coiled-coil'
+        ]
+        
+        #Nano butetsiin turliud
+        self.nanostructures = [
+            'nanofiber', 'nanotube', 'nanoribbon', 'nanorod',
+            'hydrogel', 'nanosphere', 'nanoparticle',
+            'nanosheet', 'vesicle', 'micelle', 'fibril'
+        ]
+        
+        #Turshiltiin nuhtsuluud
+        self.conditions = {
+            'pH': r'pH\s*[=:~]?\s*(\d+\.?\d*)',
+            'temperature': r'(\d+)\s*[°]?C',
+            'salt': r'(NaCl|KCl|MgCl[₂2]|CaCl[₂2])',
+            'buffer': r'(PBS|Tris|HEPES|phosphate buffer)',
+            'concentration': r'(\d+\.?\d*)\s*(mM|μM|mg/ml|µM)'
+        }
+    
+    def analyze_linguistic_context(self, text: str, sequence: str) -> Dict[str, any]:
+        doc = self.nlp(text)
+        
+        #daraala oloh
+        seq_start = text.find(sequence)
+        if seq_start == -1:
+            return {'has_bio_context': False, 'entities': [], 'dependencies': []}
+        
+        seq_end = seq_start + len(sequence)
+        nearby_entities = []
+        for ent in doc.ents:
+            if abs(ent.start_char - seq_start) < 100:  # 100 s baga temdegt
+                nearby_entities.append({
+                    'text': ent.text,
+                    'label': ent.label_
+                })
+        
+        #biologiin tulhuur ug baigaa eseh
+        has_bio_context = False
+        found_keywords = []
+        
+        for category, keywords in self.bio_keywords.items():
+            for keyword in keywords:
+                if keyword in text[max(0, seq_start-50):min(len(text), seq_end+50)].lower():
+                    has_bio_context = True
+                    found_keywords.append(keyword)
+        
+        #Oguulber dotorh ugugdliin butetsiig shinjleh
+        sentence_types = []
+        for sent in doc.sents:
+            if seq_start >= sent.start_char and seq_end <= sent.end_char:
+                #daraalal baina
+                # POS tags 
+                pos_tags = [token.pos_ for token in sent]
+                sentence_types.append({
+                    'text': sent.text[:100],
+                    'pos_tags': Counter(pos_tags).most_common(3)
+                })
+        
+        return {
+            'has_bio_context': has_bio_context,
+            'found_keywords': found_keywords,
+            'entities': nearby_entities,
+            'sentence_structure': sentence_types
+        }
+    
+    def is_valid_sequence(self, seq: str, context: str = "") -> Tuple[bool, float]:
+        confidence = 0.5
+        #bagadaa 6useg
+        if len(seq) < 6:
+            return False, 0.0
+        #Niitelg angli ug esehiig shalgah
+        if seq in self.common_words:
+            return False, 0.0
+        #Space ashiglan angli ug esehiig shalgah
+        doc = self.nlp(seq)
+        if len(doc) == 1 and doc[0].is_alpha:
+            #Toli bichigt baigaa ug esehiig shalgah
+            if not doc[0].is_oov:  #Out of vocabulary
+                #herev baival niitelg angli ug
+                confidence -= 2.0
+        
+        #Amin huchliin davtamj shalgah
+        amino_freq = Counter(seq)
+        max_freq = max(amino_freq.values())
+        repeat_ratio = max_freq / len(seq)
+        
+        if repeat_ratio > 0.5:  # 50%-s ih davtagdval
+            return False, 0.0
+        elif repeat_ratio < 0.3:  # 30%-s baga bol onovchtoi
+            confidence += 0.1
+        
+        #Biologiin utgatai esehiig shalgah
+        # Hydrophobic/hydrophilic balance
+        hydrophobic_count = sum(1 for aa in seq if aa in self.aa_properties['hydrophobic'])
+        hydrophilic_count = sum(1 for aa in seq if aa in self.aa_properties['hydrophilic'])
+        
+        if hydrophobic_count > 0 and hydrophilic_count > 0:
+            confidence += 0.15  #Amphipathic-self-assembly-d sain
+        
+        #charged residues shalgah
+        charged_count = sum(1 for aa in seq if aa in self.aa_properties['charged'])
+        charged_ratio = charged_count / len(seq)
+        
+        if 0.1 < charged_ratio < 0.4:  #onovchtoi baidla
+            confidence += 0.1
+        #spacy shinjleh
+        if context:
+            ling_analysis = self.analyze_linguistic_context(context, seq)
+            if ling_analysis['has_bio_context']:
+                confidence += 0.2
+            if ling_analysis['entities']:
+                confidence += 0.1
+        
+        #aromatic residues
+        aromatic_count = sum(1 for aa in seq if aa in self.aa_properties['aromatic'])
+        if aromatic_count > 0:
+            confidence += 0.05
+        
+        #Urt shalgah 8-30 useg bol onovchtoi
+        if 8 <= len(seq) <= 30:
+            confidence += 0.1
+        elif len(seq) > 40:
+            confidence -= 0.1
+        
+        #etssiin shalgalt
+        is_valid = confidence > 0.8
+        
+        return is_valid, min(1.0, confidence)
+    
+    #spacy bolon nlp ashiglan daraalal olj avah
+    def extract_sequences_advanced(self, text: str) -> List[Dict[str, any]]:
+        sequences = []
+        seen = set()
+        
+        # Pattern matching
+        for pattern in self.sequence_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            
+            for match in matches:
+                #daraalaliig tseverleh
+                seq = re.sub(r'[^ACDEFGHIKLMNPQRSTVWY]', '', match.group(1).upper())
+                
+                if seq in seen or len(seq) < 6:
+                    continue
+                
+                #Context avah
+                start = max(0, match.start() - 100)
+                end = min(len(text), match.end() + 100)
+                context = text[start:end]
+                
+                #Validation
+                is_valid, confidence = self.is_valid_sequence(seq, context)
+                
+                if not is_valid:
+                    continue
+                
+                seen.add(seq)
+                
+                #Linguistic analysis
+                ling_analysis = self.analyze_linguistic_context(context, seq)
+                
+                #amin huchliin composition
+                composition = self.analyze_composition(seq)
+                
+                sequences.append({
+                    'sequence': seq,
+                    'length': len(seq),
+                    'context': context[:200],  #ehnii 200 temdegt
+                    'confidence': confidence,
+                    'bio_context': ling_analysis.get('has_bio_context', False),
+                    'keywords': ', '.join(ling_analysis.get('found_keywords', [])[:3]),
+                    'composition': composition
+                })
+        
+        #confidence-r aar erembeleh
+        sequences.sort(key=lambda x: x['confidence'], reverse=True)
+        return sequences
+    
+    #daraalliin nairlagiig shinjleh
+    def analyze_composition(self, seq: str) -> str:
+        hydrophobic = sum(1 for aa in seq if aa in self.aa_properties['hydrophobic'])
+        charged = sum(1 for aa in seq if aa in self.aa_properties['charged'])
+        aromatic = sum(1 for aa in seq if aa in self.aa_properties['aromatic'])
+        
+        hydrophobic_pct = (hydrophobic / len(seq)) * 100
+        charged_pct = (charged / len(seq)) * 100
+        aromatic_pct = (aromatic / len(seq)) * 100
+        
+        return f"H:{hydrophobic_pct:.0f}% C:{charged_pct:.0f}% A:{aromatic_pct:.0f}%"
+    
+    def search_pubmed(self, query: str) -> List[str]:
+        #PubMed-s PMIDs haih
+        search_url = f"{self.base_url}esearch.fcgi"
+        params = {
+            'db': 'pubmed',
+            'term': query,
+            'retmax': self.max_results,
+            'retmode': 'json',
+            'email': self.email
+        }
+        
+        try:
+            response = requests.get(search_url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            pmids = data.get('esearchresult', {}).get('idlist', [])
+            print(f"{len(pmids)} oguulel oldlo.")
+            return pmids
+        except Exception as e:
+            print(f"Error: {e}")
+            return []
+    #PMID-s uguulliin abstract tatah
+    def fetch_abstract(self, pmid: str) -> Optional[Dict[str, str]]:
+        fetch_url = f"{self.base_url}efetch.fcgi"
+        params = {
+            'db': 'pubmed',
+            'id': pmid,
+            'retmode': 'xml',
+            'email': self.email
+        }
+        
+        try:
+            response = requests.get(fetch_url, params=params)
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+            
+            title_elem = root.find('.//ArticleTitle')
+            title = title_elem.text if title_elem is not None else ""
+            
+            abstract_texts = root.findall('.//AbstractText')
+            abstract = " ".join([at.text for at in abstract_texts if at.text])
+            
+            return {
+                'pmid': pmid,
+                'title': title,
+                'abstract': abstract,
+                'url': f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+            }
+        except Exception as e:
+            print(f"✗ PMID {pmid}: {e}")
+            return None
+    
+    #2dgch butstsiig oloh
+    def extract_secondary_structure(self, text: str) -> List[str]:
+        found = []
+        text_lower = text.lower()
+        
+        for structure in self.secondary_structures:
+            if structure.lower() in text_lower:
+                found.append(structure)
+        
+        return list(set(found))
+    
+    #Nano butetsuudiig oloh
+    def extract_nanostructures(self, text: str) -> List[str]:
+        found = []
+        text_lower = text.lower()
+        
+        for nano in self.nanostructures:
+            if nano in text_lower:
+                found.append(nano)
+        
+        return list(set(found))
+    
+    #Turshiltiin nuhtsuluudiig oloh
+    def extract_conditions(self, text: str) -> Dict[str, List[str]]:
+        conditions = {}
+        
+        for cond_name, pattern in self.conditions.items():
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            if matches:
+                if isinstance(matches[0], tuple):
+                    matches = [m[0] if m[0] else m[1] for m in matches]
+                conditions[cond_name] = list(set(matches))
+        
+        return conditions
+    
+    #oguulliig ajilluulah
+    def process_article(self, article: Dict[str, str]) -> Dict:
+        full_text = f"{article['title']} {article['abstract']}"
+        
+        #spacy+NLP ashiglan daraalal oloh
+        sequences = self.extract_sequences_advanced(full_text)
+        secondary = self.extract_secondary_structure(full_text)
+        nanostructures = self.extract_nanostructures(full_text)
+        conditions = self.extract_conditions(full_text)
+        
+        #Өндөр confidence-tei daraalluud
+        valid_sequences = [s for s in sequences if s['confidence'] > 0.75]
+        
+        return {
+            'pmid': article['pmid'],
+            'title': article['title'][:100],
+            'url': article['url'],
+            'sequences': '; '.join([s['sequence'] for s in valid_sequences]) if valid_sequences else 'N/A',
+            'confidence': '; '.join([f"{s['confidence']:.2f}" for s in valid_sequences]) if valid_sequences else 'N/A',
+            'composition': '; '.join([s['composition'] for s in valid_sequences]) if valid_sequences else 'N/A',
+            'bio_context': '; '.join([str(s['bio_context']) for s in valid_sequences]) if valid_sequences else 'N/A',
+            'secondary_structure': '; '.join(secondary) if secondary else 'N/A',
+            'nanostructures': '; '.join(nanostructures) if nanostructures else 'N/A',
+            'pH': '; '.join(conditions.get('pH', [])) if conditions.get('pH') else 'N/A',
+            'temperature': '; '.join(conditions.get('temperature', [])) if conditions.get('temperature') else 'N/A',
+            'salt': '; '.join(conditions.get('salt', [])) if conditions.get('salt') else 'N/A',
+            'buffer': '; '.join(conditions.get('buffer', [])) if conditions.get('buffer') else 'N/A',
+            'concentration': '; '.join(conditions.get('concentration', [])) if conditions.get('concentration') else 'N/A'
+        }
+    
+    #Gol mining function
+    def mine(self, query: str = "self-assembling peptides", output_file: str = "peptide_advanced.csv"):
+        print(f"\n{'='*70}")
+        #Hailt
+        print(f"PubMed search: '{query}'")
+        pmids = self.search_pubmed(query)
+        
+        if not pmids:
+            print("not found.")
+            return
+        
+        #Abstract tatah
+        articles = []
+        for i, pmid in enumerate(pmids, 1):
+            print(f"   [{i}/{len(pmids)}] PMID: {pmid}", end="")
+            article = self.fetch_abstract(pmid)
+            if article:
+                articles.append(article)
+                print(" 1")
+            else:
+                print(" 0")
+            sleep(0.5)
+        
+        #SpaCy text mining
+        results = []
+        all_sequences = []  #Buh daraalaliig hadgalah list
+        
+        for i, article in enumerate(articles, 1):
+            print(f"   [{i}/{len(articles)}] unshj baina...", end="")
+            result = self.process_article(article)
+            results.append(result)
+            
+            #Daraalaluudiig hadgalah
+            if result['sequences'] != 'N/A':
+                seqs = result['sequences'].split('; ')
+                confs = result['confidence'].split('; ')
+                comps = result['composition'].split('; ')
+                
+                for seq, conf, comp in zip(seqs, confs, comps):
+                    all_sequences.append({
+                        'sequence': seq,
+                        'length': len(seq),
+                        'confidence': conf,
+                        'composition': comp,
+                        'pmid': result['pmid'],
+                        'title': result['title'][:100],
+                        'url': result['url']
+                    })
+        #CSV d hadgalah
+        print(f"\n'{output_file}' csv filed hadgalaj baina...")
+        
+        fieldnames = ['pmid', 'title', 'url', 'sequences', 'confidence', 
+                     'composition', 'bio_context', 'secondary_structure', 
+                     'nanostructures', 'pH', 'temperature', 'salt', 
+                     'buffer', 'concentration']
+        
+        with open(output_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(results)
+        
+        #zunhun sequenceuudiig hadgalah
+        sequences_file = output_file.replace('.csv', '_sequences.csv')
+        if all_sequences:
+            seq_fieldnames = ['sequence', 'length', 'confidence', 'composition', 
+                             'pmid', 'title', 'url']
+            
+            with open(sequences_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=seq_fieldnames)
+                writer.writeheader()
+                writer.writerows(all_sequences)
+        
+        #Statistic
+        valid_seqs = sum(1 for r in results if r['sequences'] != 'N/A')
+        high_conf = sum(1 for r in results if r['confidence'] != 'N/A' and 
+                       any(float(c) > 0.8 for c in r['confidence'].split(';')))
+        unique_seqs = len(set(s['sequence'] for s in all_sequences))
+        
+        print(f"\n{'='*70}")
+        print(f"Niit oguuleliin too: {len(results)}")
+        print(f"DAraalal oldson oguulel: {valid_seqs}")
+        print(f"Niiit oldson daraalal {len(all_sequences)}")
+        print(f"Davhardsan daraalal: {unique_seqs}")
+        print(f"confidence ondortei (>0.8): {high_conf}")
+        print(f"Olson 2dgch butsets: {sum(1 for r in results if r['secondary_structure'] != 'N/A')}")
+        print(f"Nano butets: {sum(1 for r in results if r['nanostructures'] != 'N/A')}")
+        return results, all_sequences
+
+
+if __name__ == "__main__":
+    miner = PeptideMinerAdvanced(
+        email="yoboldo59@gmail.com",
+        max_results=5
+    )
+    
+    results, sequences = miner.mine(
+        query="self-assembling peptides nanofiber",
+        output_file="results.csv"
+    )
+    
+    if results:
+        print("\nJishee ehnii ur dun")
+        first = results[0]
+        for key, value in first.items():
+            print(f"{key:25s}: {str(value)[:100]}")
+        
+        if sequences:
+            print(f"\nOldson ehnii 5n daraala:")
+            for i, seq in enumerate(sequences[:5], 1):
+                print(f"\n{i}. {seq['sequence']}")
+                print(f"Length: {seq['length']}, Confidence: {seq['confidence']}")
+                print(f"Composition: {seq['composition']}")
+                print(f"Source: PMID {seq['pmid']}")
+</code></pre>
+
+</body>
+</html>
