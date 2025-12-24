@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICSI310 Lab16</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 30px;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            overflow-x: auto;
+            border-radius: 5px;
+        }
+        code {
+            font-family: "Courier New", monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ICSI310</h1>
+    <h2>Lab 16</h2>
+
+    <pre><code>
+    CODON_TABLE_RNA = {
+    #Phe(F), Leu(L)
+    "UUU":"F","UUC":"F","UUA":"L","UUG":"L",
+    #Ser(S)
+    "UCU":"S","UCC":"S","UCA":"S","UCG":"S",
+    #Tyr(Y), Stop(*)
+    "UAU":"Y","UAC":"Y","UAA":"*","UAG":"*",
+    #Cys(C), Trp(W), Stop(*)
+    "UGU":"C","UGC":"C","UGA":"*","UGG":"W",
+    #Leu(L)
+    "CUU":"L","CUC":"L","CUA":"L","CUG":"L",
+    #Pro(P)
+    "CCU":"P","CCC":"P","CCA":"P","CCG":"P",
+    #His(H), Gln(Q)
+    "CAU":"H","CAC":"H","CAA":"Q","CAG":"Q",
+    #Arg(R)
+    "CGU":"R","CGC":"R","CGA":"R","CGG":"R",
+    #Ile(I), Met(M)
+    "AUU":"I","AUC":"I","AUA":"I","AUG":"M",
+    #Thr(T)
+    "ACU":"T","ACC":"T","ACA":"T","ACG":"T",
+    #Asn(N), Lys(K)
+    "AAU":"N","AAC":"N","AAA":"K","AAG":"K",
+    #Ser(S), Arg(R)
+    "AGU":"S","AGC":"S","AGA":"R","AGG":"R",
+    #Val(V)
+    "GUU":"V","GUC":"V","GUA":"V","GUG":"V",
+    #Ala(A)
+    "GCU":"A","GCC":"A","GCA":"A","GCG":"A",
+    #Asp(D), Glu(E)
+    "GAU":"D","GAC":"D","GAA":"E","GAG":"E",
+    #Gly(G)
+    "GGU":"G","GGC":"G","GGA":"G","GGG":"G",
+}
+
+AA_1_TO_3 = {
+    "A":"Ala","R":"Arg","N":"Asn","D":"Asp","C":"Cys","Q":"Gln","E":"Glu","G":"Gly",
+    "H":"His","I":"Ile","L":"Leu","K":"Lys","M":"Met","F":"Phe","P":"Pro","S":"Ser",
+    "T":"Thr","W":"Trp","Y":"Tyr","V":"Val","*":"Stop","?":"???"
+}
+
+STOP_CODONS_DNA = {"TAA", "TAG", "TGA"}
+STOP_CODONS_RNA = {"UAA", "UAG", "UGA"}
+
+def clean_seq(seq: str) -> str:
+    return "".join(seq.split()).upper().replace("’", "'").replace("–", "-")
+
+def dna_to_mrna(dna_5to3: str) -> str:
+    return dna_5to3.replace("T", "U")
+
+def translate_rna_from_first_aug(rna_5to3: str):
+    start_idx = rna_5to3.find("AUG")
+    if start_idx == -1:
+        return [], start_idx, None 
+
+    aa1 = []
+    stop_codon = None
+    for i in range(start_idx, len(rna_5to3) - 2, 3):
+        codon = rna_5to3[i:i+3]
+        aa = CODON_TABLE_RNA.get(codon, "?")
+        aa1.append(aa)
+        if aa == "*":
+            stop_codon = codon
+            break
+    return aa1, start_idx, stop_codon
+
+def main():
+    dna = "5' – ATG GCT TTT GAA TAA – 3'"
+    dna_clean = clean_seq(dna)
+    dna_seq = "".join([b for b in dna_clean if b in "ACGT"])
+
+    mrna = dna_to_mrna(dna_seq)
+
+    aa1_list, start_idx, stop_codon_rna = translate_rna_from_first_aug(mrna)
+    aa3_list = [AA_1_TO_3.get(a, "???") for a in aa1_list]
+
+    #Start/Stop codons (DNA + RNA)
+    start_codon_dna = "ATG" if "ATG" in dna_seq else None
+    start_codon_rna = "AUG" if "AUG" in mrna else None
+    stop_codon_dna = stop_codon_rna.replace("U", "T") if stop_codon_rna else None
+
+    print("DNA (5'->3') :", dna_seq)
+    print("mRNA(5'->3') :", mrna)
+    print()
+
+    if start_idx == -1:
+        print("ehleh codon oldsongui.")
+        return
+
+    print("Amin huchil (1):", "-".join(aa1_list))
+    print("Amin huchil (3):", " - ".join(aa3_list))
+    print()
+
+    print("Start codon:")
+    print("DNA:", start_codon_dna)
+    print("RNA:", start_codon_rna)
+    print("Stop codon:")
+    print("DNA:", stop_codon_dna)
+    print("RNA:", stop_codon_rna)
+
+if __name__ == "__main__":
+    main()
+
+    </code></pre>
+
+</body>
+</html>
